@@ -4,26 +4,52 @@ mod futuring;
 pub mod iter;
 pub mod wrapper;
 
-use std::{cell::RefCell, future::Future, pin::Pin, sync::Arc};
+use std::{
+  cell::RefCell, future::Future, marker::PhantomData, pin::Pin, rc::Rc,
+  sync::Arc,
+};
 
 use futuring::YieldedFuture;
 use iter::GeneratorIterator;
 pub use wrapper::Generator;
 
+pub trait GeneratorEngine<S, Y, R, Q> {
+  type FutOut: Future<Output = R>;
+  fn make_generator(self, y: YieldWrapper<Q, Y>, start: S) -> Self::FutOut;
+}
+
+impl<T, S, Y, R, Q, Fut> GeneratorEngine<S, Y, R, Q> for T
+where
+  T: FnOnce(YieldWrapper<Q, Y>, Q) -> Fut,
+  Fut: Future<Output = R>,
+{
+  type FutOut = Fut;
+
+  fn make_generator(self, y: YieldWrapper<Q, Y>, start: S) -> Self::FutOut {
+    (self)(y, start)
+  }
+}
+
 /// Wraps an async function into something that can be used as a generator.
 ///
+/// * `S` is the Start type. This is what you pass in to start the generator.
 /// * `Y` is the Yield type. The generator returns this if it's not done yet.
 /// * `R` is the Return type. This is what the generator returns when done.
 /// * `Q` is the Query type. This is what you pass to the generator to do the next step.
-///   By default this is the unit type `()`
-pub struct UnstartedGenerator<Y, R, Q = ()> {
-  /// This is just a type-fucking wrapper tbh
-  inner: StartedGenerator<Y, R, Q>,
+///   By default this is the unit type `()`.
+///
+/// This struct is just a kind of staging area. It doesn't do anything until started.
+pub struct UnstartedGenerator<Engine, S, Y, R, Q = ()> {
+  engine: Engine,
+  _phantom: PhantomData<(S, Y, R, Q)>,
 }
 
-impl<Y, R, Q> UnstartedGenerator<Y, R, Q> {
+impl<Engine, S, Y, R, Q, Fut> UnstartedGenerator<Engine, S, Y, R, Q>
+where
+  Engine: GeneratorEngine<S, Y, R, Q, FutOut = Fut>,
+{
   /**
-  Create a generator from a closure.
+  Create a generator from a [`GeneratorEngine`].
 
   The customary way to call this function is
   ```rust
@@ -46,47 +72,30 @@ impl<Y, R, Q> UnstartedGenerator<Y, R, Q> {
   Laugh at me all you want, it works.
   `.ield` returns a future that exits control flow out to the user,
   and goes back to the closure once `[Generator::query]` is called.
+
+  But of cource you can pass any Engine type you want.
     */
-  pub fn wrap<F, Fut>(f: F) -> Self
+  pub fn wrap(engine: Engine) -> Self
   where
-    F: FnOnce(YieldWrapper<Q, Y>) -> Fut,
-    Fut: Future<Output = R> + 'static,
     Q: 'static,
     Y: 'static,
   {
-    // auugghgh
-    let swap_slot = Arc::new(RefCell::new(SwapSpace::Unstarted));
-    let yield_maker = YieldWrapper {
-      swap_slot: swap_slot.clone(),
-    };
-
-    let fut = f(yield_maker);
-    let box_fut = Box::pin(fut) as Pin<Box<dyn Future<Output = R>>>;
     Self {
-      inner: StartedGenerator {
-        gen_func: box_fut,
-        swap_slot,
-      },
+      engine,
+      _phantom: PhantomData,
     }
   }
 
   /// Start the generator. Returns either the first thing given to `y.ield`, or the return value at the end.
-  pub fn start(self) -> (StartedGenerator<Y, R, Q>, GeneratorResponse<Y, R>) {
-    let mut started = self.inner;
-    let result = started.step_generator();
-    (started, result)
-  }
-
-  /// Create an iterator that repeatedly feeds another iterator into this.
-  ///
-  /// See [`GeneratorIterator`].
-  pub fn iter_over<I>(self, iter: I) -> GeneratorIterator<Y, R, Q, I> {
-    let (started, resp) = self.start();
-    GeneratorIterator::new(started, iter, resp)
+  pub fn start(
+    self,
+    init: S,
+  ) -> (StartedGenerator<Y, R, Q>, GeneratorResponse<Y, R>) {
+    StartedGenerator::wrap_and_start(self.engine, init)
   }
 }
 
-impl<Y, R> UnstartedGenerator<Y, R, ()> {
+impl<Engine, S, Y, R, Q> UnstartedGenerator<Engine, S, Y, R, ()> {
   /// Create an iterator that calls this generator over and over with `()`.
   ///
   /// See [`GeneratorIterator`].
@@ -95,22 +104,70 @@ impl<Y, R> UnstartedGenerator<Y, R, ()> {
   }
 }
 
+impl<Engine, S, Y, R, Q, I> UnstartedGenerator<Engine, S, Y, R, Q>
+where
+  I: Iterator<Item = Q>,
+{
+  /// Create an iterator that calls this generator over and over.
+  ///
+  /// See [`GeneratorIterator`].
+  pub fn start_iter(self, init: S, iter: I) -> GeneratorIterator<Y, R, Q, I> {
+    let (started, first) = self.start(init);
+    GeneratorIterator::new(started, i, Some(first))
+  }
+}
+
+impl<Engine, S, Y, R, I> UnstartedGenerator<Engine, S, Y, R, S>
+where
+  I: Iterator<Item = Q>,
+{
+  /// Create an iterator that calls this generator over and over.
+  ///
+  /// NOTE: This ONLY works when the `S`tart type is the same as the `Q`uery type.
+  /// This way we can feed the original element of the iterator in.
+  ///
+  /// See [`GeneratorIterator`].
+  pub fn self_start_iter(self, start: S) -> GeneratorIterator<Y, R, Q, I> {}
+}
+
+impl<Engine, S, Y, R, Q> Clone for UnstartedGenerator<Engine, S, Y, R, Q>
+where
+  Engine: Clone,
+{
+  fn clone(&self) -> Self {
+    Self {
+      engine: self.engine.clone(),
+      _phantom: PhantomData,
+    }
+  }
+}
+
 pub struct StartedGenerator<Y, R, Q = ()> {
   gen_func: Pin<Box<dyn Future<Output = R>>>,
   swap_slot: SwapSpaceSlot<Q, Y>,
 }
 
-impl<Y, R, Q> StartedGenerator<Y, R, Q> {
-  /// Convenience function to wrap a closure and start it.
-  pub fn start<F, Fut>(f: F) -> (Self, GeneratorResponse<Y, R>)
+impl<S, Y, R, Q> StartedGenerator<Y, R, Q> {
+  pub fn wrap_and_start<Engine>(
+    engine: Engine,
+    start: S,
+  ) -> (Self, GeneratorResponse<Y, R>)
   where
-    F: FnOnce(YieldWrapper<Q, Y>) -> Fut,
-    Fut: Future<Output = R> + 'static,
+    Engine: GeneratorEngine<S, Y, R, Q>,
     Q: 'static,
     Y: 'static,
   {
-    let unstarted = UnstartedGenerator::wrap(f);
-    unstarted.start()
+    let state = Arc::new(Rc::new(SwapSpace::JustStarted));
+    let y = YieldWrapper::new(state.clone());
+    let fut = engine.make_generator(y, start);
+
+    let mut me = Self {
+      gen_func: Pin::new(fut),
+      swap_slot: state,
+    };
+    // Must step immediately because the user needs to `query` to get a response out otherwise
+    let out = me.step_generator();
+    (me, out)
   }
 
   pub fn query(&mut self, query: Q) -> GeneratorResponse<Y, R> {
@@ -128,6 +185,14 @@ impl<Y, R, Q> StartedGenerator<Y, R, Q> {
     drop(lock);
 
     self.step_generator()
+  }
+
+  /// Create an iterator that repeatedly feeds another iterator into this.
+  /// In order to call this method the iterator needs to have already been started.
+  ///
+  /// See [`GeneratorIterator`].
+  pub fn iter_over<I>(self, iter: I) -> GeneratorIterator<Y, R, Q, I> {
+    GeneratorIterator::new(self, iter, None)
   }
 
   fn step_generator(&mut self) -> GeneratorResponse<Y, R> {
@@ -179,6 +244,10 @@ pub struct YieldWrapper<Q, Y> {
 }
 
 impl<Q, Y> YieldWrapper<Q, Y> {
+  pub fn new(swap_slot: SwapSpaceSlot<Q, Y>) -> Self {
+    Self { swap_slot }
+  }
+
   /// Call this as `y.ield`. It returns a future that returns your querying type.
   /// Control flow will return to the inner closure once the user calls `generator.query`
   pub fn ield(&self, yielded: Y) -> impl Future<Output = Q> {
@@ -189,7 +258,7 @@ impl<Q, Y> YieldWrapper<Q, Y> {
 #[derive(derive_debug::Dbg)]
 enum SwapSpace<Q, Y> {
   /// Freshly created
-  Unstarted,
+  JustStarted,
   /// The user has *just* called `generator.query()`.
   /// Will remain in this state for a very small amount of time, in the interim period where
   /// the user has submitted a query but the generator is still routing the data around before it

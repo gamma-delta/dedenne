@@ -1,4 +1,4 @@
-use crate::{GeneratorResponse, StartedGenerator};
+use crate::{Generator, GeneratorResponse, StartedGenerator};
 
 /// Iterate over a generator.
 ///
@@ -15,8 +15,11 @@ use crate::{GeneratorResponse, StartedGenerator};
 ///
 /// I've exposed the inner fields but you probably won't need them.
 pub struct GeneratorIterator<Y, R, Q, I> {
-  /// Inner generator
-  pub generator: StartedGenerator<Y, R, Q>,
+  /// Inner generator. Usually this will be the Started case,
+  /// but for self-starting iterators it will be unstarted at first.
+  ///
+  /// Necessarily has S=Q.
+  pub generator: Generator<Q, Y, R, Q>,
   pub iter: I,
   pub start: Option<GeneratorResponse<Y, R>>,
   pub finished: GeneratorIteratorFinish<R>,
@@ -24,14 +27,14 @@ pub struct GeneratorIterator<Y, R, Q, I> {
 
 impl<Y, R, Q, I> GeneratorIterator<Y, R, Q, I> {
   pub fn new(
-    generator: StartedGenerator<Y, R, Q>,
+    generator: Generator<Y, R, Q>,
     iter: I,
-    start: GeneratorResponse<Y, R>,
+    start: Option<GeneratorResponse<Y, R>>,
   ) -> Self {
     Self {
       generator,
       iter,
-      start: Some(start),
+      start,
       finished: GeneratorIteratorFinish::NotFinished,
     }
   }
@@ -61,16 +64,20 @@ where
       return None;
     }
 
-    let gened = if let Some(start_value) = self.start.take() {
-      start_value
-    } else {
-      match self.iter.next() {
-        Some(it) => self.generator.query(it),
-        None => {
-          self.finished = GeneratorIteratorFinish::ExhaustedIterator;
-          return None;
-        }
+    let iteratee = match self.iter.next() {
+      Some(it) => it,
+      None => {
+        self.finished = GeneratorIteratorFinish::ExhaustedIterator;
+        return None;
       }
+    };
+    let gened = if matches!(
+      self.generator.get_inner(),
+      crate::wrapper::GeneratorWrapperInner::Unstarted(..)
+    ) {
+      self.generator.start(iteratee)
+    } else {
+      self.generator.query(iteratee)
     };
     match gened {
       GeneratorResponse::Yielding(y) => Some(y),

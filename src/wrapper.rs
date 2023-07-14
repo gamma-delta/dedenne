@@ -17,18 +17,18 @@ use crate::{
 ///
 /// Because this is just a convenience wrapper the main docs for things
 /// are on the inner types. Go check those out.
-pub struct Generator<Y, R, Q = ()> {
-  inner: GeneratorWrapperInner<Y, R, Q>,
+pub struct Generator<S, Y, R, Q = ()> {
+  inner: GeneratorWrapperInner<S, Y, R, Q>,
 }
 
 /// Inner `Either`-like enum for the generator wrapper.
-pub enum GeneratorWrapperInner<Y, R, Q> {
-  Unstarted(UnstartedGenerator<Y, R, Q>),
+pub enum GeneratorWrapperInner<S, Y, R, Q> {
+  Unstarted(UnstartedGenerator<S, Y, R, Q>),
   TheSplitSecondBetweenNotStartedAndStarted,
   Started(StartedGenerator<Y, R, Q>),
 }
 
-impl<Y, R, Q> Generator<Y, R, Q> {
+impl<S, Y, R, Q> Generator<S, Y, R, Q> {
   pub fn wrap<F, Fut>(f: F) -> Self
   where
     F: FnOnce(YieldWrapper<Q, Y>) -> Fut,
@@ -42,7 +42,7 @@ impl<Y, R, Q> Generator<Y, R, Q> {
     }
   }
 
-  pub fn start(&mut self) -> GeneratorResponse<Y, R> {
+  pub fn start(&mut self, init: S) -> GeneratorResponse<Y, R> {
     match self.inner {
       GeneratorWrapperInner::Unstarted(..) => {
         // aaugh
@@ -76,6 +76,16 @@ impl<Y, R, Q> Generator<Y, R, Q> {
       GeneratorWrapperInner::TheSplitSecondBetweenNotStartedAndStarted => {
         unreachable!()
       }
+    }
+  }
+
+  fn has_started(&self) -> bool {
+    match self.inner {
+      GeneratorWrapperInner::Unstarted(_)
+      | GeneratorWrapperInner::TheSplitSecondBetweenNotStartedAndStarted => {
+        false
+      }
+      GeneratorWrapperInner::Started(_) => true,
     }
   }
 }
