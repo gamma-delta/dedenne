@@ -1,0 +1,89 @@
+JUST KIDDING I never got this working
+
+//! Solution to Advent of Code 2019 day 7.
+//! I spent DAYS trying to get this to work with goroutines back in 2019.
+
+use std::str::FromStr;
+
+use dedenne::*;
+
+#[derive(Clone, Debug)]
+struct IntcodeComputer {
+  memory: Vec<i32>,
+  ip: usize,
+  port_in: Generator<i32, !>,
+  port_out: Box<dyn FnMut(i32)>,
+}
+
+impl IntcodeComputer {
+  fn new(memory: Vec<usize>) -> Self {
+    Self { memory, ip: 0 }
+  }
+
+  fn parse(source: &str) -> Self {
+    let memory = source
+      .split(",")
+      .map(FromStr::from_str)
+      .collect::<Result<_, _>>()
+      .unwrap();
+    IntcodeComputer::new(memory)
+  }
+
+  // return whether to halt
+  fn step(&mut self) -> bool {
+    let opc = self.arg_immediate();
+    match opc {
+      1 => {
+        let a = self.arg_ptr();
+        let b = self.arg_ptr();
+        self.arg_write_dest(a + b);
+      }
+      2 => {
+        let a = self.arg_ptr();
+        let b = self.arg_ptr();
+        self.arg_write_dest(a * b);
+      }
+      99 => {
+        return true;
+      }
+
+      _ => panic!("invalid opcode {} at addr {}", opc, self.ip),
+    }
+
+    false
+  }
+
+  fn arg_immediate(&mut self) -> usize {
+    let out = self.memory[self.ip];
+    self.ip += 1;
+    out
+  }
+
+  fn arg_ptr(&mut self) -> usize {
+    let addr = self.arg_immediate();
+    self.memory[addr]
+  }
+
+  fn arg_write_dest(&mut self, write: usize) {
+    let addr = self.arg_immediate();
+    self.memory[addr] = write;
+  }
+}
+
+struct Instr {
+  opcode: u32,
+  immediates: Vec<bool>,
+}
+
+fn day_2_1() {
+  let mut computer = IntcodeComputer::parse("1,0,0,3,1,1,2,3,1,3,4,3,1,5,0,3,2,10,1,19,1,19,6,23,2,13,23,27,1,27,13,31,1,9,31,35,1,35,9,39,1,39,5,43,2,6,43,47,1,47,6,51,2,51,9,55,2,55,13,59,1,59,6,63,1,10,63,67,2,67,9,71,2,6,71,75,1,75,5,79,2,79,10,83,1,5,83,87,2,9,87,91,1,5,91,95,2,13,95,99,1,99,10,103,1,103,2,107,1,107,6,0,99,2,14,0,0");
+  computer.memory[1] = 12;
+  computer.memory[2] = 2;
+
+  while !computer.step() {}
+  println!("{}", computer.memory[0]);
+}
+
+fn main() {
+  day_2_1();
+}
