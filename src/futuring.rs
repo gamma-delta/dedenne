@@ -32,7 +32,7 @@ impl<Q, Y> YieldedFuture<Q, Y> {
 
     let mut lock = swap_slot.borrow_mut();
     match std::mem::replace(&mut *lock, SwapSpace::Yielding(yielded)) {
-      SwapSpace::ProcessingQuery | SwapSpace::Unstarted => {}
+      SwapSpace::ProcessingQuery | SwapSpace::JustStarted => {}
       ono => unreachable!(
         "while making a new YieldedFuture, was in the illegal state {:?}",
         &ono

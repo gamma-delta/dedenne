@@ -12,7 +12,7 @@ use dedenne::*;
 
 fn example() {
   // A generator that returns only numbers divisible by 7.
-  let generator = UnstartedGenerator::wrap(|y| async move {
+  let generator = Generator::jumpstart_iter(|y| async move {
     for x in 2u32..1_000_000 {
       if x % 7 == 0 {
         y.ield(x);
@@ -21,7 +21,7 @@ fn example() {
     "All done!"
   });
 
-  for yielded in generator.iter() {
+  for yielded in generator {
     assert!(yielded % 7 == 0);
   }
 }

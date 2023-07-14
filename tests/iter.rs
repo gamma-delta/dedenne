@@ -1,54 +1,23 @@
-use dedenne::{iter::GeneratorIteratorFinish, *};
+use dedenne::*;
 
 #[test]
-fn exhaust_inner() {
-  let iterator = 0u32..10;
-
-  let mut geniterator = UnstartedGenerator::wrap(|y| async move {
-    let mut acc = 1u32;
-    // This loop can only run 10 times
-    for i in 0..20 {
-      acc *= 2;
-      let got = y.ield(acc * 2).await;
-      assert_eq!(got, i);
-    }
-    panic!("last i checked 20 > 10")
-  })
-  .iter_over(iterator);
-
-  for x in &mut geniterator {
-    assert!(x.is_power_of_two());
-  }
-
-  assert!(matches!(
-    geniterator.finished,
-    GeneratorIteratorFinish::ExhaustedIterator
-  ));
-}
-
-#[test]
-fn finish_generator() {
-  // This iterator will only .next 10 elements
-  let iterator =
-    (0u32..20).chain(std::iter::from_fn(|| panic!("last i checked 20 > 10")));
-
-  let mut geniterator = UnstartedGenerator::wrap(|y| async move {
-    let mut acc = 1u32;
-    for i in 0..10 {
-      acc *= 2;
-      let got = y.ield(acc).await;
-      assert_eq!(got, i);
+fn smoke_test() {
+  let (mut gen, resp) = Generator::run(|y| async move {
+    y.ield(-5).await;
+    y.ield(-7).await;
+    // and from now on, only positives
+    for x in 1..100 {
+      y.ield(x).await;
     }
     "All done!"
-  })
-  .iter_over(iterator);
+  });
+  assert!(matches!(resp, GeneratorResponse::Yielding(-5)));
+  assert!(matches!(gen.resume(), GeneratorResponse::Yielding(-7)));
 
-  for x in &mut geniterator {
-    assert!(x.is_power_of_two());
+  let mut iter = gen.iter();
+  for yielded in &mut iter {
+    assert!(yielded > 0);
   }
 
-  assert!(matches!(
-    geniterator.finished,
-    GeneratorIteratorFinish::GeneratorDone("All done!")
-  ));
+  assert_eq!(iter.consume_response(), Some("All done!"));
 }
