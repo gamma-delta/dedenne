@@ -3,5 +3,13 @@ name = "dedenne"
 version = "0.1.0"
 edition = "2021"
 
+authors = ["petrak@"]
+description = "Cute little generators using async/await in stable rust"
+
+license = "MIT"
+repository = "https://github.com/gamma-delta/dedenne"
+keywords = ["generator", "async"]
+categories = ["game-development"]
+
 [dependencies]
 derive-debug = "0.1.2"
