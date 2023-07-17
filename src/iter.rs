@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use crate::{Generator, GeneratorResponse, YieldWrapper};
+use crate::{GeneratorResponse, StartedGenerator, YieldWrapper};
 
 /// Iterate over a generator.
 ///
@@ -54,7 +54,7 @@ where
           _ => unreachable!(),
         };
 
-        let (started, resp) = Generator::run(maker);
+        let (started, resp) = StartedGenerator::run(maker);
 
         match resp {
           GeneratorResponse::Yielding(yielded) => {
@@ -107,9 +107,9 @@ pub(crate) enum GeneratorIteratorState<Y, R, Q, I> {
     I,
   ),
   /// We are still in normal operation
-  Running(Generator<Y, R, Q>, I),
+  Running(StartedGenerator<Y, R, Q>, I),
   /// The inner iterator ran out
-  ExhaustedIterator(Generator<Y, R, Q>),
+  ExhaustedIterator(StartedGenerator<Y, R, Q>),
   /// The outer generator ran out
   GeneratorDone(R, I),
 
@@ -144,7 +144,7 @@ mod test {
     let iterator = 0u32..10;
 
     let mut geniterator =
-      Generator::jumpstart_iter_over(iterator, |y| async move {
+      StartedGenerator::jumpstart_iter_over(iterator, |y| async move {
         let mut acc = 1u32;
         // This loop can only run 10 times
         for i in 0..20 {
@@ -172,7 +172,7 @@ mod test {
       (0u32..20).chain(std::iter::from_fn(|| panic!("last i checked 20 > 10")));
 
     let mut geniterator =
-      Generator::jumpstart_iter_over(iterator, |y| async move {
+      StartedGenerator::jumpstart_iter_over(iterator, |y| async move {
         let mut acc = 1u32;
         for i in 0..10 {
           acc *= 2;

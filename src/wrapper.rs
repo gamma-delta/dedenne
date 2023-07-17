@@ -6,7 +6,7 @@
 
 use std::{future::Future, marker::PhantomData};
 
-use crate::{Generator, GeneratorResponse, YieldWrapper};
+use crate::{GeneratorResponse, StartedGenerator, YieldWrapper};
 
 /// Silly convenience wrapper over a started or unstarted generator.
 ///
@@ -14,7 +14,7 @@ use crate::{Generator, GeneratorResponse, YieldWrapper};
 /// instead of awkward tuple destructuring.
 ///
 /// I can stop using generics whenever I want
-pub struct GeneratorWrapper<F, Fut, S, Y, R, Q = ()> {
+pub struct Generator<F, Fut, S, Y, R, Q = ()> {
   inner: GeneratorWrapperInner<F, Fut, S, Y, R, Q>,
 }
 
@@ -25,10 +25,10 @@ pub enum GeneratorWrapperInner<F, Fut, S, Y, R, Q> {
     _phantom: PhantomData<(Fut, S)>,
   },
   Starting,
-  Started(Generator<Y, R, Q>),
+  Started(StartedGenerator<Y, R, Q>),
 }
 
-impl<F, Fut, S, Y, R, Q> GeneratorWrapper<F, Fut, S, Y, R, Q>
+impl<F, Fut, S, Y, R, Q> Generator<F, Fut, S, Y, R, Q>
 where
   F: FnOnce(YieldWrapper<Q, Y>, S) -> Fut,
   Fut: Future<Output = R> + 'static,
@@ -54,7 +54,7 @@ where
           GeneratorWrapperInner::Unstarted { future_maker, .. } => future_maker,
           _ => unreachable!(),
         };
-        let (started, out) = Generator::run_with(init, future_maker);
+        let (started, out) = StartedGenerator::run_with(init, future_maker);
         self.inner = GeneratorWrapperInner::Started(started);
         out
       }
@@ -88,7 +88,7 @@ where
   }
 }
 
-impl<F, Fut, S, Y, R> GeneratorWrapper<F, Fut, S, Y, R, ()>
+impl<F, Fut, S, Y, R> Generator<F, Fut, S, Y, R, ()>
 where
   F: FnOnce(YieldWrapper<(), Y>, S) -> Fut,
   Fut: Future<Output = R> + 'static,

@@ -5,7 +5,7 @@
 
 use std::io::{self, Write};
 
-use dedenne::{Generator, GeneratorResponse, YieldWrapper};
+use dedenne::{GeneratorResponse, StartedGenerator, YieldWrapper};
 
 struct BazQuxxInstaller {
   y: YieldWrapper<String, String>,
@@ -110,7 +110,7 @@ impl BazQuxxInstaller {
 }
 
 fn main() -> io::Result<()> {
-  let (mut generator, mut output) = Generator::run(|y| async move {
+  let (mut generator, mut output) = StartedGenerator::run(|y| async move {
     BazQuxxInstaller::start(y).await;
   });
   let mut stdout = io::stdout();

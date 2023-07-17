@@ -2,7 +2,7 @@ use dedenne::*;
 
 #[test]
 fn smoke_test() {
-  let (mut gen, resp) = Generator::run(|y| async move {
+  let (mut gen, resp) = StartedGenerator::run(|y| async move {
     y.ield(-5).await;
     y.ield(-7).await;
     // and from now on, only positives

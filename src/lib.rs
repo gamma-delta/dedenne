@@ -3,6 +3,7 @@
 mod futuring;
 pub mod iter;
 pub mod wrapper;
+pub use wrapper::Generator;
 
 use std::{cell::RefCell, future::Future, pin::Pin, sync::Arc};
 
@@ -16,21 +17,21 @@ use iter::{GeneratorIterator, GeneratorIteratorState};
 /// * `R` is the Return type. This is what the generator returns when done.
 /// * `Q` is the Query type. This is what you pass to the generator to do the next step.
 ///   By default this is the unit type `()`.
-pub struct Generator<Y, R, Q = ()> {
+pub struct StartedGenerator<Y, R, Q = ()> {
   gen_func: Pin<Box<dyn Future<Output = R>>>,
   swap_slot: SwapSpaceSlot<Q, Y>,
 }
 
-impl<Y, R, Q> Generator<Y, R, Q> {
+impl<Y, R, Q> StartedGenerator<Y, R, Q> {
   /**
-  Create and start generator from a [`GeneratorEngine`].
+  Create and start a generator.
 
   The customary way to call this function is
   ```rust
   # use dedenne::*;
   # let foo = ();
-  # let _: (Generator<u32, &'static str>, _) =
-  Generator::run_with(foo, |y, foo| async move {
+  # let _: (StartedGenerator<u32, &'static str>, _) =
+  StartedGenerator::run_with(foo, |y, foo| async move {
     y.ield(1).await;
     y.ield(2).await;
     y.ield(3).await;
@@ -77,7 +78,7 @@ impl<Y, R, Q> Generator<Y, R, Q> {
     Y: 'static,
   {
     let inner_fut = |y, ()| async move { f(y).await };
-    Generator::run_with::<(), _, _>((), inner_fut)
+    StartedGenerator::run_with::<(), _, _>((), inner_fut)
   }
 
   pub fn query(&mut self, query: Q) -> GeneratorResponse<Y, R> {
@@ -148,7 +149,7 @@ impl<Y, R, Q> Generator<Y, R, Q> {
   }
 }
 
-impl<Y, R> Generator<Y, R, ()> {
+impl<Y, R> StartedGenerator<Y, R, ()> {
   /// Convenience wrapper for `query(())`, or querying with a unit.
   pub fn resume(&mut self) -> GeneratorResponse<Y, R> {
     self.query(())
@@ -167,12 +168,13 @@ impl<Y, R> Generator<Y, R, ()> {
     Fut: Future<Output = R> + 'static,
     Y: 'static,
   {
-    Generator::jumpstart_iter_over(std::iter::repeat(()), f)
+    StartedGenerator::jumpstart_iter_over(std::iter::repeat(()), f)
   }
 }
 
 /// The result of querying a generator.
 /// Either it will `Y`ield a value, or be done and return a `R`esponse.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GeneratorResponse<Y, R> {
   Yielding(Y),
   Done(R),

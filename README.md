@@ -11,19 +11,35 @@ over async/await in completely stable Rust.
 use dedenne::*;
 
 fn example() {
-  // A generator that returns only numbers divisible by 7.
-  let generator = Generator::jumpstart_iter(|y| async move {
-    for x in 2u32..1_000_000 {
-      if x % 7 == 0 {
-        y.ield(x);
-      }
+  let mut generator = Generator::new(|y, init| async move {
+    for x in 0..init {
+      y.ield(x).await;
     }
+    for x in (0..init).rev() {
+      y.ield(x).await;
+    }
+
     "All done!"
   });
 
-  for yielded in generator {
-    assert!(yielded % 7 == 0);
-  }
+  assert_eq!(
+    generator.start(3), GeneratorResponse::Yielding(0)
+  );
+  assert_eq!(
+    generator.resume(), GeneratorResponse::Yielding(1)
+  );
+  assert_eq!(
+    generator.resume(), GeneratorResponse::Yielding(2)
+  );
+  assert_eq!(
+    generator.resume(), GeneratorResponse::Yielding(1)
+  );
+  assert_eq!(
+    generator.resume(), GeneratorResponse::Yielding(0)
+  );
+  assert_eq!(
+    generator.resume(), GeneratorResponse::Done("All done!")
+  );
 }
 ```
 
